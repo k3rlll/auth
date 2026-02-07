@@ -1,11 +1,11 @@
-package middleware
+package interceptor
 
 import (
 	"context"
-	manager "main/pkg/jwt"
 	ctxUtil "main/pkg/utils/context"
 	"strings"
 
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -17,8 +17,12 @@ var publicMethods = map[string]struct{}{
 	"/auth.v1.AuthService/Login":    {},
 }
 
+type JWTManager interface {
+	VerifyAccessToken(tokenString string) (userID uuid.UUID, err error)
+}
+
 // AuthInterceptor is a gRPC middleware that intercepts incoming requests to perform authentication.
-func AuthInterceptor(manager manager.JWTManager) grpc.UnaryServerInterceptor {
+func AuthInterceptor(jwtManager JWTManager) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
 		req any,
@@ -41,11 +45,12 @@ func AuthInterceptor(manager manager.JWTManager) grpc.UnaryServerInterceptor {
 
 		accessToken := strings.TrimPrefix(values[0], "Bearer ")
 
-		userID, err := manager.VerifyAccessToken(accessToken)
+		userID, err := jwtManager.VerifyAccessToken(accessToken)
 		if err != nil {
 			return nil, status.Errorf(codes.Unauthenticated, "invalid token: %v", err)
 		}
-		newCtx := ctxUtil.NewContext(ctx, userID)
+
+		newCtx := ctxUtil.NewContext(ctx, userID.String())
 
 		return handler(newCtx, req)
 	}

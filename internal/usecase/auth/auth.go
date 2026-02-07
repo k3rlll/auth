@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"time"
+	"unicode"
 
 	"main/domain/entity"
 
@@ -27,12 +28,15 @@ type AuthRepo interface {
 
 	// DeleteAllSessions removes all sessions associated with a user, effectively logging them out from !ALL! devices.
 	DeleteAllSessions(ctx context.Context, userID uuid.UUID) error
+
+	// UserIsBlocked checks if the user is blocked and returns true if the user is not blocked, false otherwise.
+	UserIsBlocked(userID uuid.UUID) (bool, error)
 }
 
 // JWTManager defines the interface for JWT token management.
 type JWTManager interface {
 	NewAccessToken(userID uuid.UUID) (string, error)
-	VerifyAccessToken(token string) (string, error)
+	VerifyAccessToken(token string) (userID uuid.UUID, err error)
 }
 
 type AuthUsecase struct {
@@ -57,9 +61,8 @@ func (uc *AuthUsecase) RegisterUser(ctx context.Context, username, email, passwo
 	if !validateEmail(email) {
 		return uuid.Nil, errors.New("invalid email format")
 	}
-
-	if !validatePassword(password) {
-		return uuid.Nil, errors.New("password does not meet the requirements")
+	if err := validatePassword(password); err != nil {
+		return uuid.Nil, err
 	}
 
 	passwordHash, err := hashPassword(password)
@@ -116,8 +119,16 @@ func (uc *AuthUsecase) LoginUser(ctx context.Context, login, password, userAgent
 }
 
 // LogoutSession logs out the user from a specific session by deleting that session from the database.
-func (uc *AuthUsecase) LogoutSession(ctx context.Context, userID uuid.UUID, sessionID uuid.UUID) error {
-	err := uc.authRepo.DeleteSession(ctx, userID, sessionID)
+func (uc *AuthUsecase) LogoutSession(ctx context.Context, userID string, sessionID string) error {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return errors.New("invalid user ID")
+	}
+	sid, err := uuid.Parse(sessionID)
+	if err != nil {
+		return errors.New("invalid session ID")
+	}
+	err = uc.authRepo.DeleteSession(ctx, uid, sid)
 	if err != nil {
 		return err
 	}
@@ -125,12 +136,33 @@ func (uc *AuthUsecase) LogoutSession(ctx context.Context, userID uuid.UUID, sess
 }
 
 // LogoutAllSessions logs out the user from all sessions by deleting all sessions associated with the user from the database.
-func (uc *AuthUsecase) LogoutAllSessions(ctx context.Context, userID uuid.UUID) error {
-	err := uc.authRepo.DeleteAllSessions(ctx, userID)
+func (uc *AuthUsecase) LogoutAllSessions(ctx context.Context, userID string) error {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return errors.New("invalid user ID")
+	}
+	err = uc.authRepo.DeleteAllSessions(ctx, uid)
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+// VerifyUser checks if the provided access token is valid and returns the associated user ID if the token is valid.
+// It also checks if the user is blocked and returns an error if the user is blocked.
+func (uc *AuthUsecase) VerifyUser(token string) (userID uuid.UUID, err error) {
+	userID, err = uc.JWTManager.VerifyAccessToken(token)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	isBlocked, err := uc.authRepo.UserIsBlocked(userID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if isBlocked {
+		return uuid.Nil, errors.New("user is blocked")
+	}
+	return userID, nil
 }
 
 // hashPassword hashes the given password using bcrypt
@@ -139,31 +171,56 @@ func hashPassword(password string) (string, error) {
 	return string(passwordHash), err
 }
 
+// verifyPassword compares the provided password with the stored password hash and returns true if they match, false otherwise.
 func verifyPassword(password, passwordHash string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password))
 	return err == nil
 }
 
 // ValidatePassword checks if the password meets certain criteria
-func validatePassword(password string) bool {
-	if len(password) < 8 {
-		return false
+func validatePassword(password string) error {
+	var (
+		hasMinLen  = false
+		hasUpper   = false
+		hasLower   = false
+		hasNumber  = false
+		hasSpecial = false
+	)
+
+	if len(password) >= 8 {
+		hasMinLen = true
 	}
 
-	if !containsUppercase(password) {
-		return false
-	}
-	return true
-}
-
-// Simple function to check if a string contains at least one uppercase letter
-func containsUppercase(s string) bool {
-	for _, char := range s {
-		if char >= 'A' && char <= 'Z' {
-			return true
+	for _, char := range password {
+		switch {
+		case unicode.IsUpper(char):
+			hasUpper = true
+		case unicode.IsLower(char):
+			hasLower = true
+		case unicode.IsNumber(char):
+			hasNumber = true
+		case unicode.IsPunct(char) || unicode.IsSymbol(char):
+			hasSpecial = true
 		}
 	}
-	return false
+
+	if !hasMinLen {
+		return errors.New("password must be at least 8 characters long")
+	}
+	if !hasUpper {
+		return errors.New("password must contain at least one uppercase letter")
+	}
+	if !hasLower {
+		return errors.New("password must contain at least one lowercase letter")
+	}
+	if !hasNumber {
+		return errors.New("password must contain at least one number")
+	}
+	if !hasSpecial {
+		return errors.New("password must contain at least one special character")
+	}
+
+	return nil
 }
 
 // Simple function to check if a string contains '@' symbol

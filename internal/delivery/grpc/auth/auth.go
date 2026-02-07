@@ -6,21 +6,23 @@ import (
 	authv1 "main/pkg/proto/gen/auth/v1"
 	"strings"
 
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 )
 
-type AuthHandler struct {
-	logger      slog.Logger
+type RPCAuthHandler struct {
+	authv1.UnimplementedAuthServiceServer
+	logger      *slog.Logger
 	AuthUsecase AuthUsecase
 }
 
 type AuthUsecase interface {
 
 	//RegisterUser registers a new user and returns the user ID as a string.
-	RegisterUser(ctx context.Context, username, email, password string) (userID string, err error)
+	RegisterUser(ctx context.Context, username, email, password string) (userID uuid.UUID, err error)
 
 	//LoginUser authenticates a user and returns an access token.
 	LoginUser(ctx context.Context, login, password, userAgent string, ip string) (accessToken string, err error)
@@ -32,8 +34,8 @@ type AuthUsecase interface {
 	LogoutAllSessions(ctx context.Context, userID string) error
 }
 
-func NewAuthHandler(logger slog.Logger, authUsecase AuthUsecase) *AuthHandler {
-	return &AuthHandler{
+func NewAuthHandler(logger *slog.Logger, authUsecase AuthUsecase) *RPCAuthHandler {
+	return &RPCAuthHandler{
 		logger:      logger,
 		AuthUsecase: authUsecase,
 	}
@@ -41,19 +43,19 @@ func NewAuthHandler(logger slog.Logger, authUsecase AuthUsecase) *AuthHandler {
 }
 
 // RegisterUser registers a new user and returns the user ID.
-func (h *AuthHandler) RegisterUser(ctx context.Context, req *authv1.RegisterRequest) (*authv1.RegisterResponse, error) {
+func (h *RPCAuthHandler) RegisterUser(ctx context.Context, req *authv1.RegisterRequest) (*authv1.RegisterResponse, error) {
 	userID, err := h.AuthUsecase.RegisterUser(ctx, req.Username, req.Email, req.Password)
 	if err != nil {
 		h.logger.Error("Failed to register user", "error", err)
 		return nil, err
 	}
 	return &authv1.RegisterResponse{
-		UserId: userID}, nil
+		UserId: userID.String()}, nil
 
 }
 
 // LoginUser authenticates the user and returns an access token if successful.
-func (h *AuthHandler) LoginUser(ctx context.Context, req *authv1.LoginRequest) (*authv1.LoginResponse, error) {
+func (h *RPCAuthHandler) LoginUser(ctx context.Context, req *authv1.LoginRequest) (*authv1.LoginResponse, error) {
 	if req.GetLogin() == "" || req.GetPassword() == "" {
 		h.logger.Error("Login or password is empty")
 		return nil, status.Error(codes.InvalidArgument, "login or password is empty")
@@ -72,7 +74,7 @@ func (h *AuthHandler) LoginUser(ctx context.Context, req *authv1.LoginRequest) (
 }
 
 // LogoutSession logs out the user from a specific session by deleting that session from the database.
-func (h *AuthHandler) LogoutSession(ctx context.Context, req *authv1.LogoutRequest) (*authv1.LogoutResponse, error) {
+func (h *RPCAuthHandler) LogoutSession(ctx context.Context, req *authv1.LogoutRequest) (*authv1.LogoutResponse, error) {
 	err := h.AuthUsecase.LogoutSession(ctx, req.GetUserId(), req.GetSessionId())
 	if err != nil {
 		h.logger.Error("Failed to logout session", "error", err)
@@ -84,7 +86,7 @@ func (h *AuthHandler) LogoutSession(ctx context.Context, req *authv1.LogoutReque
 }
 
 // LogoutAllSessions logs out the user from all sessions by deleting all sessions associated with the user from the database.
-func (h *AuthHandler) LogoutAllSessions(ctx context.Context, req *authv1.LogoutAllRequest) (*authv1.LogoutAllResponse, error) {
+func (h *RPCAuthHandler) LogoutAllSessions(ctx context.Context, req *authv1.LogoutAllRequest) (*authv1.LogoutAllResponse, error) {
 	err := h.AuthUsecase.LogoutAllSessions(ctx, req.GetUserId())
 	if err != nil {
 		h.logger.Error("Failed to logout all sessions", "error", err)

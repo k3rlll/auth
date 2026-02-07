@@ -4,11 +4,12 @@ import "github.com/google/uuid"
 
 // User represents a user in the system with essential attributes.
 type User struct {
-	ID        uuid.UUID `json:"id"`
-	Email     string    `json:"email"`
-	Username  string    `json:"username"`
-	Password  string    `json:"password"`
-	CreatedAt int64     `json:"created_at"`
+	ID           uuid.UUID `json:"id"`
+	Email        string    `json:"email"`
+	Username     string    `json:"username"`
+	PasswordHash string    `json:"password"`
+	CreatedAt    int64     `json:"created_at"`
+	IsBlocked    bool      `json:"is_blocked"`
 }
 
 type UserSettings struct {

@@ -9,10 +9,10 @@ import (
 
 type JWTManager struct {
 	secretKey      string
-	accessTokenTTL time.Duration
+	accessTokenTTL int
 }
 
-func NewJWTManager(secretKey string, tokenTTL time.Duration) *JWTManager {
+func NewJWTManager(secretKey string, tokenTTL int) *JWTManager {
 	return &JWTManager{
 		secretKey:      secretKey,
 		accessTokenTTL: tokenTTL,
@@ -23,7 +23,7 @@ func NewJWTManager(secretKey string, tokenTTL time.Duration) *JWTManager {
 func (manager *JWTManager) NewAccessToken(userID uuid.UUID) (string, error) {
 	jwtClaims := jwt.NewWithClaims(jwt.SigningMethodHS256, &jwt.MapClaims{
 		"user_id": userID,
-		"exp":     time.Now().Add(manager.accessTokenTTL).Unix(),
+		"exp":     time.Now().Add(time.Duration(manager.accessTokenTTL) * time.Minute).Unix(),
 		"iat":     time.Now().Unix(),
 	})
 	tokenString, err := jwtClaims.SignedString([]byte(manager.secretKey))
@@ -34,20 +34,22 @@ func (manager *JWTManager) NewAccessToken(userID uuid.UUID) (string, error) {
 }
 
 // VerifyAccessToken verifies the access token and returns the user ID if the token is valid.
-func (manager *JWTManager) VerifyAccessToken(tokenString string) (string, error) {
+func (manager *JWTManager) VerifyAccessToken(tokenString string) (userID uuid.UUID, err error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, jwt.ErrTokenMalformed
 		}
-		return manager.secretKey, nil
+		return []byte(manager.secretKey), nil
 	})
 	if err != nil {
-		return "", err
+		return uuid.Nil, err
 	}
 	sub, err := token.Claims.GetSubject()
 	if err != nil || sub == "" {
-		return "", jwt.ErrTokenMalformed
+		return uuid.Nil, jwt.ErrTokenMalformed
 	}
 
-	return sub, nil
+	uuid := uuid.MustParse(sub)
+
+	return uuid, nil
 }

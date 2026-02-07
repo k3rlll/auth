@@ -55,7 +55,7 @@ func (r *AuthRepo) StoreSession(ctx context.Context, userID uuid.UUID, session e
 
 }
 
-// DeleteSession removes a specific session for a user, effectively logging them out from that ONE SEPICFIC SESSION.
+// DeleteSession removes a specific session for a user, effectively logging them out from that ONE SPECIFIC SESSION.
 func (r *AuthRepo) DeleteSession(ctx context.Context, userID uuid.UUID, sessionID uuid.UUID) error {
 	sql := `DELETE FROM sessions WHERE session_id = $1 AND user_id = $2`
 	_, err := r.pool.Exec(ctx, sql, sessionID, userID)
@@ -67,4 +67,15 @@ func (r *AuthRepo) DeleteAllSessions(ctx context.Context, userID uuid.UUID) erro
 	sql := `DELETE FROM sessions WHERE user_id = $1`
 	_, err := r.pool.Exec(ctx, sql, userID)
 	return err
+}
+
+func (r *AuthRepo) UserIsBlocked(userID uuid.UUID) (bool, error) {
+	var isBlocked bool
+	err := r.pool.QueryRow(context.Background(),
+		"SELECT is_blocked FROM users WHERE id = $1", userID).
+		Scan(&isBlocked)
+	if err != nil {
+		return false, err
+	}
+	return !isBlocked, nil
 }

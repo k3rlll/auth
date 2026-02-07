@@ -1,5 +1,10 @@
 version: 3
 
+dotenv: ['.env']
+
+vars:
+  MIGRATIONS_DIR: "./migrations"
+
 
 tasks:
   generate-auth-proto:
@@ -11,3 +16,8 @@ tasks:
     cmds:
       - protoc -I api/proto --go_out=internal/delivery/ws/events_proto --go_opt=paths=source_relative --go-grpc_out=internal/delivery/ws/events_proto --go-grpc_opt=paths=source_relative --grpc-gateway_out=internal/delivery/ws/events_proto --grpc-gateway_opt=paths=source_relative api/proto/websocket/v1/websocket.proto 
     desc: Generate Go code from .proto files
+  create-migration:
+    desc: Create a new SQL migration with the given name
+    cmds:
+      - goose -dir {{.MIGRATIONS_DIR}} create {{.CLI_ARGS}} sql 
+    
