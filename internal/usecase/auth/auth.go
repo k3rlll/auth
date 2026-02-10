@@ -31,6 +31,12 @@ type AuthRepo interface {
 
 	// UserIsBlocked checks if the user is blocked and returns true if the user is not blocked, false otherwise.
 	UserIsBlocked(userID uuid.UUID) (bool, error)
+
+	// GetSessionByRefreshToken retrieves the session information based on the provided refresh token.
+	GetSessionByRefreshToken(ctx context.Context, refreshToken uuid.UUID) (entity.Session, error)
+
+	// RefreshSession updates the session information in the database, allowing for token renewal and session extension.
+	RefreshSession(ctx context.Context, session entity.Session) error
 }
 
 // JWTManager defines the interface for JWT token management.
@@ -48,6 +54,49 @@ func NewAuthUsecase(authRepo AuthRepo, JWTManager JWTManager) *AuthUsecase {
 	return &AuthUsecase{
 		authRepo:   authRepo,
 		JWTManager: JWTManager}
+}
+//TODO: Do not send userID, instead, use the refresh token to identify the session and user. This will prevent potential security issues and simplify the API.
+// RefreshSessionToken validates the provided refresh token and returns the associated user ID if the token is valid.
+func (uc *AuthUsecase) RefreshSessionToken(ctx context.Context, refreshToken string, userID string) (string, string, error) {
+	sid, err := uuid.Parse(refreshToken)
+	if err != nil {
+		return "", "", errors.New("invalid session ID")
+	}
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return "", "", errors.New("invalid user ID")
+	}
+
+	session, err := uc.authRepo.GetSessionByRefreshToken(ctx, sid)
+	if err != nil {
+		return "", "", err
+	}
+	if session.UserID != uid {
+		return "", "", errors.New("session does not belong to the user")
+	}
+	if session.ExpiresAt.Before(session.CreatedAt) {
+		uc.authRepo.DeleteSession(ctx, uid, session.ID)
+		return "", "", errors.New("session has expired")
+	}
+
+	session.ExpiresAt = time.Now().Add(15 * 24 * time.Hour)
+	session.CreatedAt = time.Now()
+	session.RefreshToken, err = uuid.NewUUID()
+	if err != nil {
+		return "", "", err
+	}
+
+	err = uc.authRepo.RefreshSession(ctx, session)
+	if err != nil {
+		return "", "", err
+	}
+
+	newAccessToken, err := uc.JWTManager.NewAccessToken(uid)
+	if err != nil {
+		return "", "", err
+	}
+
+	return newAccessToken, session.RefreshToken.String(), nil
 }
 
 // RegisterUser validates the input, hashes the password, and creates a new user in the database.
@@ -81,23 +130,28 @@ func (uc *AuthUsecase) RegisterUser(ctx context.Context, username, email, passwo
 // LoginUser authenticates the user by verifying the provided credentials.
 // If successful, it generates an access token and a refresh token, stores the session in the database, and returns the access token.
 // If authentication fails, it returns an error.
-func (uc *AuthUsecase) LoginUser(ctx context.Context, login, password, userAgent string, ip string) (accessToken string, err error) {
+// TODO: Add rate limiting to prevent brute-force attacks.
+func (uc *AuthUsecase) LoginUser(ctx context.Context,
+	login,
+	password,
+	userAgent string,
+	ip string) (uuid.UUID, string, string, error) {
 	userID, passwordHash, err := uc.authRepo.GetUserByLogin(ctx, login)
 	if err != nil {
-		return "", err
+		return uuid.Nil, "", "", err
 	}
 	if !verifyPassword(password, passwordHash) {
-		return "", errors.New("invalid credentials")
+		return uuid.Nil, "", "", errors.New("invalid credentials")
 	}
 
-	accessToken, err = uc.JWTManager.NewAccessToken(userID)
+	accessToken, err := uc.JWTManager.NewAccessToken(userID)
 	if err != nil {
-		return "", err
+		return uuid.Nil, "", "", err
 	}
 
 	refreshToken, err := uuid.NewUUID()
 	if err != nil {
-		return "", err
+		return uuid.Nil, "", "", err
 	}
 
 	session := entity.Session{
@@ -112,10 +166,10 @@ func (uc *AuthUsecase) LoginUser(ctx context.Context, login, password, userAgent
 
 	err = uc.authRepo.StoreSession(ctx, userID, session)
 	if err != nil {
-		return "", err
+		return uuid.Nil, "", "", err
 	}
 
-	return accessToken, nil
+	return userID, accessToken, refreshToken.String(), nil
 }
 
 // LogoutSession logs out the user from a specific session by deleting that session from the database.

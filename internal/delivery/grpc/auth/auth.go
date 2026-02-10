@@ -26,13 +26,16 @@ type AuthUsecase interface {
 	RegisterUser(ctx context.Context, username, email, password string) (userID uuid.UUID, err error)
 
 	//LoginUser authenticates a user and returns an access token.
-	LoginUser(ctx context.Context, login, password, userAgent string, ip string) (accessToken string, err error)
+	LoginUser(ctx context.Context, login, password, userAgent string, ip string) (userID uuid.UUID, accessToken string, refreshToken string, err error)
 
 	//LogoutSession logs out a user from a specific session.
 	LogoutSession(ctx context.Context, userID string, sessionID string) error
 
 	//LogoutAllSessions logs out a user from all sessions.
 	LogoutAllSessions(ctx context.Context, userID string) error
+
+	//RefreshSessionToken refreshes the session token for a user and returns the new access token and refresh token.
+	RefreshSessionToken(ctx context.Context, refreshToken string, userID string) (string, string, error)
 }
 
 func NewAuthHandler(logger *slog.Logger, authUsecase AuthUsecase) *RPCAuthHandler {
@@ -63,13 +66,16 @@ func (h *RPCAuthHandler) Login(ctx context.Context, req *authv1.LoginRequest) (*
 	}
 	userAgent := getUserAgent(ctx)
 	clientIP := getClientIP(ctx)
-	token, err := h.AuthUsecase.LoginUser(ctx, req.GetLogin(), req.GetPassword(), userAgent, clientIP)
+	userID, accessToken, refreshToken, err := h.AuthUsecase.LoginUser(ctx, req.GetLogin(), req.GetPassword(), userAgent, clientIP)
 	if err != nil {
 		h.logger.Error("Failed to login user", "error", err)
 		return nil, status.Error(codes.Unauthenticated, "invalid credentials")
 	}
+	metadata.AppendToOutgoingContext(ctx, "user_id", userID.String())
+
 	return &authv1.LoginResponse{
-		Token: token,
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
 	}, nil
 
 }
@@ -96,6 +102,19 @@ func (h *RPCAuthHandler) LogoutAll(ctx context.Context, req *authv1.LogoutAllReq
 	}
 	return &authv1.LogoutAllResponse{
 		Success: true,
+	}, nil
+}
+
+// RefreshSession refreshes the session token for a user and returns the new access token and refresh token.
+func (h *RPCAuthHandler) RefreshSession(ctx context.Context, req *authv1.RefreshTokenRequest) (*authv1.RefreshTokenResponse, error) {
+	newAccessToken, newRefreshToken, err := h.AuthUsecase.RefreshSessionToken(ctx, req.GetRefreshToken(), req.GetUserId())
+	if err != nil {
+		h.logger.Error("Failed to refresh session token", "error", err)
+		return nil, status.Error(codes.Internal, "failed to refresh session token")
+	}
+	return &authv1.RefreshTokenResponse{
+		AccessToken:  newAccessToken,
+		RefreshToken: newRefreshToken,
 	}, nil
 }
 

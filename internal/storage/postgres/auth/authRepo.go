@@ -69,6 +69,27 @@ func (r *AuthRepo) DeleteAllSessions(ctx context.Context, userID uuid.UUID) erro
 	return err
 }
 
+func (r *AuthRepo) RefreshSession(ctx context.Context, session entity.Session) error {
+	sql := `UPDATE sessions SET created_at = $1, expires_at = $2, refresh_token = $3 WHERE id = $4 AND user_id = $5`
+	_, err := r.pool.Exec(ctx, sql, session.CreatedAt, session.ExpiresAt, session.RefreshToken, session.ID, session.UserID)
+	return err
+}
+
+func (r *AuthRepo) GetSessionByRefreshToken(ctx context.Context, refreshToken uuid.UUID) (entity.Session, error) {
+	var session entity.Session
+	sql := `SELECT id, user_id, refresh_token, created_at, expires_at,   
+			FROM sessions WHERE refresh_token = $1`
+	err := r.pool.QueryRow(ctx, sql, refreshToken).Scan(
+		&session.ID,
+		&session.UserID,
+		&session.RefreshToken,
+		&session.CreatedAt,
+		&session.ExpiresAt,
+	)
+	return session, err
+
+}
+
 func (r *AuthRepo) UserIsBlocked(userID uuid.UUID) (bool, error) {
 	var isBlocked bool
 	err := r.pool.QueryRow(context.Background(),

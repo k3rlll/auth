@@ -8,6 +8,7 @@ import (
 )
 
 type AuthUsecase interface {
+	// VerifyUser verifies the access token and returns the user ID.
 	VerifyUser(token string) (userID uuid.UUID, err error)
 }
 
@@ -20,9 +21,9 @@ func AuthMiddleware(authUsecase AuthUsecase) echo.MiddlewareFunc {
 				return echo.NewHTTPError(401, "Unauthorized")
 			}
 
-			token := strings.TrimPrefix(header, "Bearer ")
+			accessToken := strings.TrimPrefix(header, "Bearer ")
 
-			userID, err := authUsecase.VerifyUser(token)
+			userID, err := authUsecase.VerifyUser(accessToken)
 			if err != nil {
 				return echo.NewHTTPError(401, "Unauthorized")
 			}

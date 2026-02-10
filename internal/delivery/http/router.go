@@ -51,6 +51,7 @@ func MapRoutes(e *echo.Echo, authHandler *handler.AuthHandler, authUsecase AuthU
 	e.POST("/logout_all", authHandler.LogoutAll, AuthMiddleware(authUsecase))
 	e.POST("/register", authHandler.Register)
 	e.POST("/login", authHandler.Login)
+	e.POST("/refresh", authHandler.RefreshSession)
 
 	logger.Info("HTTP routes mapped successfully")
 }
