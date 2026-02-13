@@ -131,8 +131,8 @@ func (uc *AuthUsecase) RegisterUser(ctx context.Context, username, email, passwo
 func (uc *AuthUsecase) LoginUser(ctx context.Context,
 	login,
 	password,
-	userAgent string,
-	ip netip.Addr) (uuid.UUID, string, string, error) {
+	userAgent,
+	ip string) (uuid.UUID, string, string, error) {
 	userID, passwordHash, err := uc.authRepo.GetUserByLogin(ctx, login)
 	if err != nil {
 		return uuid.Nil, "", "", err
@@ -140,6 +140,7 @@ func (uc *AuthUsecase) LoginUser(ctx context.Context,
 	if !verifyPassword(password, passwordHash) {
 		return uuid.Nil, "", "", errors.New("invalid credentials")
 	}
+
 
 	accessToken, err := uc.JWTManager.NewAccessToken(userID)
 	if err != nil {
@@ -151,6 +152,11 @@ func (uc *AuthUsecase) LoginUser(ctx context.Context,
 		return uuid.Nil, "", "", err
 	}
 
+	netipAddr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return uuid.Nil, "", "", errors.New("invalid IP address")
+	}
+
 	session := entity.Session{
 		ID:           uuid.New(),
 		UserID:       userID,
@@ -158,7 +164,7 @@ func (uc *AuthUsecase) LoginUser(ctx context.Context,
 		CreatedAt:    time.Now(),
 		ExpiresAt:    time.Now().Add(15 * 24 * time.Hour),
 		UserAgent:    userAgent,
-		ClientIP:     ip,
+		ClientIP:     netipAddr,
 	}
 
 	err = uc.authRepo.StoreSession(ctx, userID, session)

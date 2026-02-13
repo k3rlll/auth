@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -44,6 +45,21 @@ func main() {
 	defer pool.Close()
 	logger.Info("Connected to the database successfully")
 
+	//Redis client setup
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     cfg.RedisConfig.Addr,
+		Password: cfg.RedisConfig.Password,
+		DB:       cfg.RedisConfig.DB,
+	})
+	defer redisClient.Close()
+
+	_, err = redisClient.Ping(context.Background()).Result()
+	if err != nil {
+		logger.Error("Failed to connect to Redis", "error", err)
+		os.Exit(1)
+	}
+	logger.Info("Connected to Redis successfully")
+
 	//  Init Core Logic
 	jwtManager := jwt.NewJWTManager(cfg.JWTConfig.Secret, cfg.JWTConfig.ExpirationMinutes)
 	authRepository := authRepo.NewAuthRepo(pool)
@@ -56,7 +72,7 @@ func main() {
 	//  HTTP Server Setup (Echo)
 	e := echo.New()
 	e.HTTPErrorHandler = errHandler.HandleError
-	routes.MapRoutes(e, httpHandler, authUsecase, logger)
+	routes.MapRoutes(e, httpHandler, authUsecase, logger, cfg.RateLimiterConfig, redisClient)
 
 	// http.Server configuration with timeouts for better resource management and security
 	httpAddr := net.JoinHostPort(cfg.Server.Host, strconv.Itoa(cfg.Server.Port))

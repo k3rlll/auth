@@ -98,8 +98,12 @@ func (h *AuthHandler) Login(c echo.Context) error {
 
 }
 
+// Logout handles the logout request by invalidating the specified session for the user.
+// It expects a JSON payload containing the user ID and session ID. If the request is valid and the session is successfully invalidated,
+// it returns a 204 No Content response. If there are any errors during the process, it returns an appropriate HTTP error response.
 func (h *AuthHandler) Logout(c echo.Context) error {
 	var req LogoutRequest
+
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("invalid request: %v", err))
 	}
@@ -107,9 +111,11 @@ func (h *AuthHandler) Logout(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to logout session: %v", err))
 	}
+
 	return c.NoContent(204)
 }
 
+// LogoutAll handles the logout request by invalidating all sessions for the user.
 func (h *AuthHandler) LogoutAll(c echo.Context) error {
 	var req LogoutRequest
 	if err := c.Bind(&req); err != nil {
@@ -119,9 +125,21 @@ func (h *AuthHandler) LogoutAll(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to logout all sessions: %v", err))
 	}
+
+	c.SetCookie(
+		&http.Cookie{
+			Name:     "refresh_token",
+			Value:    "",
+			HttpOnly: true,
+			Secure:   true,
+			Expires:  time.Unix(0, 0), // Expire the cookie immediately
+		},
+	)
+
 	return c.NoContent(204)
 }
 
+// RefreshSession handles the session refresh request by validating the provided refresh token and issuing a new access token and refresh token if the refresh token is valid.
 func (h *AuthHandler) RefreshSession(c echo.Context) error {
 	refreshTokenCookie, err := c.Cookie("refresh_token")
 	if err != nil {

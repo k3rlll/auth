@@ -2,7 +2,33 @@ networks:
   app-network:
     driver: bridge
 
+volumes:
+  redis_data:
+  db_data:
+
+
 services:
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: my-project-redis
+    restart: always
+    environment:
+      - REDIS_PASSWORD=super_secret_password_123
+
+    command: redis-server --requirepass super_secret_password_123 --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "super_secret_password_123", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - app-network
+
   postgres:
     image: postgres:13
     container_name: threads-postgres
@@ -11,6 +37,8 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=myappdb
+    ports:
+      - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
     networks:
@@ -43,12 +71,13 @@ services:
     ports:
       - "8082:8082"
       - "50052:50052"
-      - "5432:5432"
     env_file:
       - .env
     environment:
       - DB_HOST=postgres
       - CONFIG_PATH=./configs/config.yaml
+      - REDIS_ADDR=redis:6379
+      - REDIS_PASSWORD=super_secret_password_123
     networks:
       - app-network
     depends_on:
@@ -56,6 +85,5 @@ services:
         condition: service_healthy
       migrator:
         condition: service_completed_successfully
-
-volumes:
-  db_data:
+      redis:
+        condition: service_healthy

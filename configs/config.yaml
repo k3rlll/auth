@@ -8,6 +8,10 @@ server:
   port: 8082
   server_mode: "development"
 
+rate_limiter:
+  limit: 10
+  window: 1m
+
 grpc:
   host: 0.0.0.0
   port: 50052
@@ -18,6 +22,12 @@ database:
   username: "postgres"
   password: "postgres"
   name: "myappdb"
+
+redis:
+  addr: "redis:6379"
+  password: "super_secret_password_123"
+  db: 0
+
 jwt:
   secret: "mysecretkey"
   expiration_minutes: 15

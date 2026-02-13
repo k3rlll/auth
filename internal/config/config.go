@@ -10,11 +10,25 @@ import (
 )
 
 type Config struct {
-	Env            string `yaml:"env" default:"development"`
-	PostgresConfig `yaml:"database"`
-	JWTConfig      `yaml:"jwt"`
-	Server         `yaml:"server"`
-	GrpcServer     `yaml:"grpc"`
+	Env               string `yaml:"env" default:"development"`
+	PostgresConfig    `yaml:"database"`
+	JWTConfig         `yaml:"jwt"`
+	Server            `yaml:"server"`
+	GrpcServer        `yaml:"grpc"`
+	RateLimiterConfig `yaml:"rate_limiter"`
+	RedisConfig       `yaml:"redis"`
+}
+
+type RedisConfig struct {
+	Addr     string `yaml:"addr" env:"REDIS_ADDR" env-default:"localhost:6379"`
+	Password string `yaml:"password" env:"REDIS_PASSWORD" env-default:""`
+	DB       int    `yaml:"db" env:"REDIS_DB" env-default:"0"`
+	// Optional: Add fields for connection pool settings, timeouts, etc.
+}
+
+type RateLimiterConfig struct {
+	Limit  int           `yaml:"limit" env:"RATE_LIMITER_LIMIT" env-default:"100"`
+	Window time.Duration `yaml:"window" env:"RATE_LIMITER_WINDOW" env-default:"1m"`
 }
 
 type Server struct {
