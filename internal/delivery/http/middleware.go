@@ -3,8 +3,10 @@ package http
 import (
 	"context"
 	"main/internal/config"
+	metrics "main/internal/metrics"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -75,5 +77,24 @@ func RateLimitMiddleware(client *redis.Client, cfg *config.RateLimiterConfig) ec
 			return next(c)
 		}
 
+	}
+}
+
+func MetricsMiddleware(m *metrics.Metrics) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+
+			startTime := time.Now()
+			err := next(c)
+			duration := time.Since(startTime).Seconds()
+
+			path := c.Path()
+			method := c.Request().Method
+			status := strconv.Itoa(c.Response().Status)
+
+			m.RequestDuration.WithLabelValues(method, path, status).Observe(duration)
+
+			return err
+		}
 	}
 }

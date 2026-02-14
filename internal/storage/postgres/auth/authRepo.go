@@ -3,35 +3,52 @@ package auth
 import (
 	"context"
 	"main/domain/entity"
+	metrics "main/internal/metrics"
 	"main/pkg/customerrors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type AuthRepo struct {
-	pool *pgxpool.Pool
+	pool    *pgxpool.Pool
+	Metrics *metrics.Metrics
 }
 
-func NewAuthRepo(pool *pgxpool.Pool) *AuthRepo {
-	return &AuthRepo{pool: pool}
+func NewAuthRepo(pool *pgxpool.Pool, metrics *metrics.Metrics) *AuthRepo {
+	return &AuthRepo{
+		pool:    pool,
+		Metrics: metrics,
+	}
 }
 
 // CreateUser creates a new user in the database with the provided details and returns the user ID.
 func (r *AuthRepo) CreateUser(ctx context.Context, userID uuid.UUID, email, username, passwordHash string) (uuid.UUID, error) {
+	var err error
+	defer func(start time.Time) {
+		r.Metrics.ObserveDB("insert_user", start, err)
+	}(time.Now())
 	tag, err := r.pool.Exec(ctx, "INSERT INTO users (id, email, username, password_hash) VALUES ($1, $2, $3, $4)",
 		userID, email, username, passwordHash)
+
 	if err != nil {
 		return uuid.Nil, err
 	}
 	if tag.RowsAffected() != 1 {
-		return uuid.Nil, customerrors.ErrNoTagsAffected
+		err = customerrors.ErrNoTagsAffected
+		return uuid.Nil, err
 	}
 	return userID, nil
 }
 
 // Returns userID and password hash
 func (r *AuthRepo) GetUserByLogin(ctx context.Context, login string) (userID uuid.UUID, passwordHash string, err error) {
+
+	defer func(start time.Time) {
+		r.Metrics.ObserveDB("select_user_by_login", start, err)
+	}(time.Now())
+
 	err = r.pool.QueryRow(ctx, "select id, password_hash from users where username = $1 OR email = $1", login).Scan(
 		&userID,
 		&passwordHash,
@@ -44,13 +61,17 @@ func (r *AuthRepo) GetUserByLogin(ctx context.Context, login string) (userID uui
 }
 
 // Saves the session associated with a user in the database, allowing for session management and token revocation.
-func (r *AuthRepo) StoreSession(ctx context.Context, userID uuid.UUID, session entity.Session) error {
+func (r *AuthRepo) StoreSession(ctx context.Context, userID uuid.UUID, session entity.Session) (err error) {
+	defer func(start time.Time) {
+		r.Metrics.ObserveDB("insert_session", start, err)
+	}(time.Now())
 	sql := `INSERT INTO sessions 
 			(id, user_id, refresh_token, created_at, expires_at, user_agent, ip_address) 
 			VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
-	_, err := r.pool.Exec(ctx,
+	_, err = r.pool.Exec(ctx,
 		sql, session.ID, userID, session.RefreshToken, session.CreatedAt, session.ExpiresAt, session.UserAgent, session.ClientIP)
+
 	return err
 
 }
@@ -69,17 +90,26 @@ func (r *AuthRepo) DeleteAllSessions(ctx context.Context, userID uuid.UUID) erro
 	return err
 }
 
-func (r *AuthRepo) RefreshSession(ctx context.Context, session entity.Session) error {
+func (r *AuthRepo) RefreshSession(ctx context.Context, session entity.Session) (err error) {
+
+	defer func(start time.Time) {
+		r.Metrics.ObserveDB("update_session", start, err)
+	}(time.Now())
+
 	sql := `UPDATE sessions SET created_at = $1, expires_at = $2, refresh_token = $3 WHERE id = $4 AND user_id = $5`
-	_, err := r.pool.Exec(ctx, sql, session.CreatedAt, session.ExpiresAt, session.RefreshToken, session.ID, session.UserID)
+	_, err = r.pool.Exec(ctx, sql, session.CreatedAt, session.ExpiresAt, session.RefreshToken, session.ID, session.UserID)
 	return err
 }
 
-func (r *AuthRepo) GetSessionByRefreshToken(ctx context.Context, refreshToken uuid.UUID) (entity.Session, error) {
-	var session entity.Session
+// GetSessionByRefreshToken retrieves a session from the database based on the provided refresh token, allowing for session validation and management.
+func (r *AuthRepo) GetSessionByRefreshToken(ctx context.Context, refreshToken uuid.UUID) (session entity.Session, err error) {
+	defer func(start time.Time) {
+		r.Metrics.ObserveDB("select_session_by_refresh_token", start, err)
+	}(time.Now())
+
 	sql := `SELECT id, user_id, created_at, expires_at, user_agent, ip_address
 			FROM sessions WHERE refresh_token = $1`
-	err := r.pool.QueryRow(ctx, sql, refreshToken).Scan(
+	err = r.pool.QueryRow(ctx, sql, refreshToken).Scan(
 		&session.ID,
 		&session.UserID,
 		&session.CreatedAt,

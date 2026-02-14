@@ -3,6 +3,7 @@ package authHandler
 import (
 	"context"
 	"fmt"
+	"main/internal/metrics"
 	"net/http"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 type AuthHandler struct {
 	AuthUsecase AuthUsecase
+	Metrics     *metrics.Metrics
 }
 
 type AuthUsecase interface {
@@ -32,8 +34,11 @@ type AuthUsecase interface {
 	RefreshSessionToken(ctx context.Context, refreshToken string) (newAccessToken string, newRefreshToken string, err error)
 }
 
-func NewAuthHandler(authUsecase AuthUsecase) *AuthHandler {
-	return &AuthHandler{AuthUsecase: authUsecase}
+func NewAuthHandler(authUsecase AuthUsecase, metrics *metrics.Metrics) *AuthHandler {
+	return &AuthHandler{
+		AuthUsecase: authUsecase,
+		Metrics:     metrics,
+	}
 }
 
 // DTOs

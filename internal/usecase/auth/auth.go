@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	metrics "main/internal/metrics"
 	"net/netip"
 	"time"
 	"unicode"
@@ -49,15 +50,17 @@ type JWTManager interface {
 type AuthUsecase struct {
 	authRepo   AuthRepo
 	JWTManager JWTManager
+	Metrics    *metrics.Metrics
 }
 
-func NewAuthUsecase(authRepo AuthRepo, JWTManager JWTManager) *AuthUsecase {
+func NewAuthUsecase(authRepo AuthRepo, JWTManager JWTManager, metrics *metrics.Metrics) *AuthUsecase {
 	return &AuthUsecase{
 		authRepo:   authRepo,
-		JWTManager: JWTManager}
+		JWTManager: JWTManager,
+		Metrics:    metrics,
+	}
 }
 
-// TODO: Do not send userID, instead, use the refresh token to identify the session and user. This will prevent potential security issues and simplify the API.
 // RefreshSessionToken validates the provided refresh token and returns the associated user ID if the token is valid.
 func (uc *AuthUsecase) RefreshSessionToken(ctx context.Context, refreshToken string) (string, string, error) {
 	sid, err := uuid.Parse(refreshToken)
@@ -127,33 +130,37 @@ func (uc *AuthUsecase) RegisterUser(ctx context.Context, username, email, passwo
 // LoginUser authenticates the user by verifying the provided credentials.
 // If successful, it generates an access token and a refresh token, stores the session in the database, and returns the access token.
 // If authentication fails, it returns an error.
-// TODO: Add rate limiting to prevent brute-force attacks.
 func (uc *AuthUsecase) LoginUser(ctx context.Context,
 	login,
 	password,
 	userAgent,
 	ip string) (uuid.UUID, string, string, error) {
+
 	userID, passwordHash, err := uc.authRepo.GetUserByLogin(ctx, login)
 	if err != nil {
+		uc.Metrics.LoginAttempts.WithLabelValues("failure").Inc()
 		return uuid.Nil, "", "", err
 	}
 	if !verifyPassword(password, passwordHash) {
+		uc.Metrics.LoginAttempts.WithLabelValues("failure").Inc()
 		return uuid.Nil, "", "", errors.New("invalid credentials")
 	}
 
-
 	accessToken, err := uc.JWTManager.NewAccessToken(userID)
 	if err != nil {
+		uc.Metrics.LoginAttempts.WithLabelValues("failure").Inc()
 		return uuid.Nil, "", "", err
 	}
 
 	refreshToken, err := uuid.NewUUID()
 	if err != nil {
+		uc.Metrics.LoginAttempts.WithLabelValues("failure").Inc()
 		return uuid.Nil, "", "", err
 	}
 
 	netipAddr, err := netip.ParseAddr(ip)
 	if err != nil {
+		uc.Metrics.LoginAttempts.WithLabelValues("failure").Inc()
 		return uuid.Nil, "", "", errors.New("invalid IP address")
 	}
 
@@ -169,9 +176,11 @@ func (uc *AuthUsecase) LoginUser(ctx context.Context,
 
 	err = uc.authRepo.StoreSession(ctx, userID, session)
 	if err != nil {
+		uc.Metrics.LoginAttempts.WithLabelValues("failure").Inc()
 		return uuid.Nil, "", "", err
 	}
 
+	uc.Metrics.LoginAttempts.WithLabelValues("success").Inc()
 	return userID, accessToken, refreshToken.String(), nil
 }
 

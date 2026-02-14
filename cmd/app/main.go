@@ -9,6 +9,7 @@ import (
 	"main/internal/delivery/grpc/interceptor"
 	routes "main/internal/delivery/http"
 	httpAuthHandler "main/internal/delivery/http/auth_handler"
+	"main/internal/metrics"
 	psql "main/internal/storage/postgres"
 	authRepo "main/internal/storage/postgres/auth"
 	authUs "main/internal/usecase/auth"
@@ -24,6 +25,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -34,6 +36,10 @@ func main() {
 	cfg := config.LoadConfig()
 	logger := setupLogger(cfg.Env)
 	logger.Info("Application started", "env", cfg.Env)
+
+	//prometheus metrics setup
+	reg := prometheus.NewRegistry()
+	metrics := metrics.NewMetrics(reg)
 
 	//database connection setup
 	dsn := cfg.PostgresConfig.DSN()
