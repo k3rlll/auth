@@ -68,17 +68,17 @@ func main() {
 
 	//  Init Core Logic
 	jwtManager := jwt.NewJWTManager(cfg.JWTConfig.Secret, cfg.JWTConfig.ExpirationMinutes)
-	authRepository := authRepo.NewAuthRepo(pool)
-	authUsecase := authUs.NewAuthUsecase(authRepository, jwtManager)
+	authRepository := authRepo.NewAuthRepo(pool, metrics)
+	authUsecase := authUs.NewAuthUsecase(authRepository, jwtManager, metrics)
 
 	// Init Handlers
-	httpHandler := httpAuthHandler.NewAuthHandler(authUsecase)
+	httpHandler := httpAuthHandler.NewAuthHandler(authUsecase, metrics)
 	grpcHandler := grpcAuthHandler.NewAuthHandler(logger, authUsecase)
 
 	//  HTTP Server Setup (Echo)
 	e := echo.New()
 	e.HTTPErrorHandler = errHandler.HandleError
-	routes.MapRoutes(e, httpHandler, authUsecase, logger, cfg.RateLimiterConfig, redisClient)
+	routes.MapRoutes(e, httpHandler, authUsecase, logger, cfg.RateLimiterConfig, metrics, redisClient)
 
 	// http.Server configuration with timeouts for better resource management and security
 	httpAddr := net.JoinHostPort(cfg.Server.Host, strconv.Itoa(cfg.Server.Port))

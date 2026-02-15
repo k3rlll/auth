@@ -1,0 +1,18 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'auth-service'
+    metrics_path: '/metrics' # endpoint for Prometheus metrics
+    static_configs:
+      - targets: ['app:8082'] #app's hostname and port
+
+  # Add more scrape configs for other services as needed
+  # This is an example for a node exporter running on the same network for monitoring system temperature, CPU, etc.
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']

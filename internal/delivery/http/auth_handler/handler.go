@@ -171,3 +171,19 @@ func (h *AuthHandler) RefreshSession(c echo.Context) error {
 
 	return c.JSON(200, map[string]string{"access_token": newAccessToken})
 }
+
+// Silly example of how to use the metrics in handler
+// in real application you would check for user role or permissions and return the refresh token for admin users only
+func (h *AuthHandler) GetTokenForAdmin(c echo.Context) error {
+	refreshToken := "admin-token" // In real application, you would generate a real refresh token for admin users
+	c.SetCookie(&http.Cookie{
+		Name:     "admin_token",
+		Value:    refreshToken,
+		HttpOnly: true,
+		Secure:   true,
+		Expires:  time.Now().Add(15 * 24 * time.Hour),
+		Path:     "/admin",
+	})
+	return c.JSON(200, nil)
+
+}

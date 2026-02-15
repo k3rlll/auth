@@ -8,6 +8,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	middleware "github.com/labstack/echo/v4/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -24,7 +25,7 @@ func MapRoutes(
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORS())
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
-		Skipper:   middleware.DefaultSkipper,
+		Skipper:   func(c echo.Context) bool { return c.Path() == "/metrics" }, // Skip logging for /metrics endpoint
 		LogURI:    true,
 		LogMethod: true,
 		LogStatus: true,
@@ -63,6 +64,7 @@ func MapRoutes(
 	e.POST("/register", authHandler.Register, MetricsMiddleware(m))
 	e.POST("/login", authHandler.Login, RateLimitMiddleware(client, &rateLimiterConfig), MetricsMiddleware(m))
 	e.POST("/refresh", authHandler.RefreshSession, MetricsMiddleware(m))
+	e.GET("/metrics", echo.WrapHandler(promhttp.Handler()))
 
 	logger.Info("HTTP routes mapped successfully")
 }

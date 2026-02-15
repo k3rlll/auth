@@ -18,6 +18,23 @@ type AuthUsecase interface {
 	VerifyUser(token string) (userID uuid.UUID, err error)
 }
 
+// Just a silly example
+func IsAdminMiddleware() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			header := c.Request().Header.Get("authorization")
+			if header == "" || !strings.HasPrefix(header, "Bearer ") {
+				return echo.NewHTTPError(401, "Unauthorized")
+			}
+			if !strings.Contains(header, "admin_token") {
+				return echo.NewHTTPError(403, "Forbidden")
+			}
+			return next(c)
+
+		}
+	}
+}
+
 func AuthMiddleware(authUsecase AuthUsecase) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
