@@ -15,6 +15,10 @@ import (
 )
 
 // AuthRepo defines the interface for authentication-related database operations.
+
+// =======================================================================================
+//
+//go:generate mockgen -source=auth.go -destination=./mocks/mock_usecase.go -package=mocks
 type AuthRepo interface {
 	// CreateUser creates a new user in the database with the provided details and returns the user ID.
 	CreateUser(ctx context.Context, userID uuid.UUID, email, username, passwordHash string) (uuid.UUID, error)
@@ -74,7 +78,7 @@ func (uc *AuthUsecase) RefreshSessionToken(ctx context.Context, refreshToken str
 	}
 	uid := session.UserID
 
-	if session.ExpiresAt.Before(session.CreatedAt) {
+	if session.ExpiresAt.Before(time.Now()) {
 		uc.authRepo.DeleteSession(ctx, uid, session.ID)
 		return "", "", errors.New("session has expired")
 	}
@@ -316,4 +320,3 @@ func validateUsername(username string) bool {
 	}
 	return true
 }
-
